@@ -12,6 +12,7 @@ from astrbot.core.star import star_map
 
 from ..services.support import FORM_DURATION_MINUTES, FORM_FIELD, form_template
 from .replies import reply
+from .support_admin import ADMIN_COMMANDS, register_support_admin
 
 
 class SupportFormReplyFilter(CustomFilter):
@@ -19,6 +20,9 @@ class SupportFormReplyFilter(CustomFilter):
         if not event.is_private_chat():
             return False
         text = event.get_message_str()
+        first_word = text.lstrip().split(maxsplit=1)
+        if first_word and first_word[0].removeprefix("/") in ADMIN_COMMANDS:
+            return False
         if FORM_FIELD.search(text):
             return True
         if len(text.strip().splitlines()) < 2:
@@ -40,6 +44,7 @@ def register_support(module_name: str) -> None:
         desc="私聊提交工单",
     )(start_support)
     custom_filter(SupportFormReplyFilter, priority=10)(receive_support_form)
+    register_support_admin(module_name)
 
 
 async def start_support(plugin: Any, event: AstrMessageEvent):
@@ -137,5 +142,6 @@ async def receive_support_form(plugin: Any, event: AstrMessageEvent):
         platform_name=platform_name,
         sender_name=sender_name,
         markdown=markdown,
+        origin_umo=event.unified_msg_origin,
     )
     yield reply(event, message, markdown, stop=True)

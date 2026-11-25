@@ -1,4 +1,10 @@
-# AHNU:CSC.Bot
+<p align="center">
+  <img src="logo.png" alt="AHNU:CSC.Bot Logo" width="180" />
+</p>
+
+<h1 align="center">AHNU:CSC.Bot</h1>
+
+<p align="center">[AHNU:CSC.Bot] 安徽师范大学计算机与信息学院（人工智能学院）CTF 校园网络安全竞赛专用 Bot</p>
 
 ## Ret2Shell 赛事播报
 
@@ -31,7 +37,6 @@ AstrBot 插件通过 Ret2Shell WebSocket 接收赛事事件，通过 HTTP API �
 
 在 15 分钟内私聊发回填好的表单。两种模式都接受 Markdown 表格和纯文本回复。字段名与内容之间可以用空格或冒号。省略字段名时，发两行非空文本，第一行是标题，第二行是描述。表格内的换行可用 `<br>`，竖线可写成 `\|`。
 
-```markdown
 | 字段 | 内容 |
 | --- | --- |
 | 工单标题 | 题目页面无法打开 |
@@ -39,11 +44,19 @@ AstrBot 插件通过 Ret2Shell WebSocket 接收赛事事件，通过 HTTP API �
 | 队伍 ID | 42 |
 | 平台 ID | 00123 |
 | 学号 | |
-```
 
 队伍 ID、Ret2Shell 平台 ID 和学号均可选填。用纯文本提交时，可为每个选填项另起一行并保留字段名。填写的值会随工单保存并推送。提交成功后会收到工单编号。工单保存在 AstrBot 插件数据目录的 support_tickets 子目录，每张工单对应一个 JSON 文件。
 
 在处理工单的会话中用 /sid 查看 UMO，然后将一个或多个 UMO 填入插件配置的 support_umo 列表。工单保存后会立即向每个会话推送编号、提交者信息、标题和描述。OneBot 会显示 QQ 号和昵称。QQ 官方会显示 OpenID，只有事件提供昵称时才显示昵称。列表为空时仅保存工单。提交者会收到工单编号。
+
+### 管理员处理工单
+
+- `/support_list [页码]` 按提交时间从新到旧列出工单，默认显示第一页
+- `/support_show 工单编号` 查看提交内容、状态和已保存的处理结果
+- `/support_resolve 工单编号 处理结果` 保存结果并发送到提交者的原私聊
+- 在工单接收会话中，引用机器人发出的工单通知并发送 `/support_resolve 处理结果`，机器人会从通知读取编号
+
+结果发送失败时，工单显示「待通知」。发送 `/support_resolve 工单编号` 或引用通知后发送 `/support_resolve`，即可重发已保存的结果。若适配器只提供引用 ID，请按工单编号处理。此前通过 OneBot 或 QQ 官方适配器提交的工单会使用记录中的账号标识恢复私聊地址。
 
 ## 项目结构
 

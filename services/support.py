@@ -7,9 +7,11 @@ from uuid import uuid4
 
 from astrbot.api import logger
 from astrbot.api.event import AstrMessageEvent, MessageChain
+from astrbot.api.platform import MessageType
 from astrbot.api.star import Context
 
 FORM_DURATION_MINUTES = 15
+TICKET_ID = re.compile(r"[0-9a-f]{32}", re.ASCII)
 OPTIONAL_FIELDS = {
     "team_id": "队伍 ID",
     "ret2shell_platform_id": "平台 ID",
@@ -46,6 +48,7 @@ class SupportService:
         self._target_umos = target_umos
         self.directory: Path | None = None
         self._pending: dict[tuple[str, str], asyncio.TimerHandle] = {}
+        self._sending_results: set[str] = set()
 
     def expect_reply(self, sender: tuple[str, str]) -> asyncio.TimerHandle:
         previous = self._pending.pop(sender, None)
@@ -100,6 +103,7 @@ class SupportService:
         platform_name: str = "",
         sender_name: str = "",
         markdown: bool = False,
+        origin_umo: str = "",
     ) -> str:
         pending = self._pending.get(sender)
         if pending is None:
@@ -122,15 +126,11 @@ class SupportService:
             "platform_name": platform_name,
             "sender_id": sender[1],
             "sender_name": sender_name,
+            "origin_umo": origin_umo,
             **form,
         }
-        temporary_path = self.directory / f"{ticket_id}.tmp"
         try:
-            self.directory.mkdir(parents=True, exist_ok=True)
-            temporary_path.write_text(
-                json.dumps(ticket, ensure_ascii=False, indent=2), encoding="utf-8"
-            )
-            temporary_path.replace(self.directory / f"{ticket_id}.json")
+            self._save_ticket(self.directory / f"{ticket_id}.json", ticket)
         except OSError as exc:
             logger.error("Could not save support ticket (%s).", type(exc).__name__)
             return "暂时无法保存工单，请稍后重新发送表单。"
@@ -139,6 +139,137 @@ class SupportService:
         if self._target_umos:
             await self._forward(ticket, markdown)
         return f"工单已收到\n工单编号：{ticket_id}"
+
+    def list_tickets(self) -> list[dict]:
+        if self.directory is None:
+            raise OSError("Support ticket directory is unavailable")
+        tickets = []
+        for path in self.directory.glob("*.json"):
+            try:
+                if (ticket := self.get_ticket(path.stem)) is not None:
+                    tickets.append(ticket)
+            except OSError as exc:
+                logger.warning(
+                    "Could not read support ticket %s (%s).",
+                    path.stem,
+                    type(exc).__name__,
+                )
+        return sorted(
+            tickets,
+            key=lambda ticket: (ticket["created_at"], ticket["id"]),
+            reverse=True,
+        )
+
+    def get_ticket(self, ticket_id: str) -> dict | None:
+        if self.directory is None:
+            raise OSError("Support ticket directory is unavailable")
+        if not TICKET_ID.fullmatch(ticket_id):
+            return None
+        try:
+            ticket = json.loads(
+                (self.directory / f"{ticket_id}.json").read_text(encoding="utf-8")
+            )
+        except FileNotFoundError:
+            return None
+        except ValueError as exc:
+            raise OSError("Invalid support ticket JSON") from exc
+        if (
+            not isinstance(ticket, dict)
+            or ticket.get("id") != ticket_id
+            or not all(
+                isinstance(ticket.get(key), str)
+                for key in ("title", "description", "created_at")
+            )
+        ):
+            raise OSError("Invalid support ticket record")
+        return ticket
+
+    @staticmethod
+    def _save_ticket(path: Path, ticket: dict) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = path.with_suffix(".tmp")
+        temporary_path.write_text(
+            json.dumps(ticket, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        temporary_path.replace(path)
+
+    async def resolve_ticket(
+        self, ticket_id: str, result: str, *, resolved_by: str, markdown: bool
+    ) -> str:
+        if self.directory is None:
+            raise OSError("Support ticket directory is unavailable")
+        if ticket_id in self._sending_results:
+            return "该工单的处理结果正在发送，请稍后查看状态。"
+        ticket = self.get_ticket(ticket_id)
+        if ticket is None:
+            return "未找到该工单。"
+        if ticket.get("notified_at"):
+            return "该工单已处理，结果已发送。"
+        path = self.directory / f"{ticket_id}.json"
+        if ticket.get("resolution"):
+            if result and result != ticket["resolution"]:
+                return "该工单已有处理结果。请仅发送 /support_resolve 工单编号，重发已保存的结果。"
+        else:
+            if not result:
+                return "用法：/support_resolve 工单编号 处理结果"
+            ticket.update(
+                resolution=result,
+                resolved_by=resolved_by,
+                resolved_at=datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            )
+            self._save_ticket(path, ticket)
+
+        origin = ticket.get("origin_umo")
+        if not origin and ticket.get("platform_name") in (
+            "aiocqhttp",
+            "qq_official",
+            "qq_official_webhook",
+        ):
+            if ticket.get("platform_id") and ticket.get("sender_id"):
+                origin = f"{ticket['platform_id']}:{MessageType.FRIEND_MESSAGE.value}:{ticket['sender_id']}"
+        if not origin:
+            return "处理结果已保存。该工单缺少原会话地址。"
+
+        self._sending_results.add(ticket_id)
+        try:
+            sent = await self._send_resolution(origin, ticket, markdown)
+            if not sent:
+                return (
+                    "处理结果已保存，但发送失败。可用 /support_resolve 工单编号 重试。"
+                )
+
+            ticket["notified_at"] = datetime.now(timezone.utc).isoformat(
+                timespec="seconds"
+            )
+            try:
+                self._save_ticket(path, ticket)
+            except OSError:
+                logger.exception(
+                    "Could not record delivery of support ticket %s.", ticket_id
+                )
+                return "处理结果已发送，通知状态写入失败。"
+            return "工单已处理，结果已发送到提交会话。"
+        finally:
+            self._sending_results.discard(ticket_id)
+
+    async def _send_resolution(self, origin: str, ticket: dict, markdown: bool) -> bool:
+        result = ticket["resolution"]
+        if markdown:
+            result = MARKDOWN_SPECIAL.sub(r"\\\1", result)
+            message = f"## 工单处理结果\n\n**工单编号**：{ticket['id']}\n\n{result}"
+        else:
+            message = f"工单处理结果\n工单编号：{ticket['id']}\n{result}"
+        try:
+            return await self._context.send_message(
+                origin, MessageChain().message(message).use_markdown(markdown)
+            )
+        except Exception as exc:
+            logger.warning(
+                "Could not send result for support ticket %s (%s).",
+                ticket["id"],
+                type(exc).__name__,
+            )
+            return False
 
     async def _forward(self, ticket: dict[str, str], markdown: bool) -> None:
         id_label = {
@@ -149,6 +280,7 @@ class SupportService:
         nickname = " ".join(ticket.get("sender_name", "").split())
         fields = [
             ("工单编号", ticket["id"]),
+            ("处理方式", "引用本条通知发送 /support_resolve 处理结果"),
             ("提交者昵称", nickname or "未提供"),
             (id_label, f"{ticket['sender_id']}（{ticket['platform_id']}）"),
             ("工单标题", ticket["title"]),
