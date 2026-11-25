@@ -1,0 +1,80 @@
+{
+  "ret2shell_ws_link": {
+    "description": "Ret2Shell WebSocket 赛事连接地址",
+    "type": "string",
+    "hint": "从赛事管理页面复制赛事播报地址",
+    "obvious_hint": true
+  },
+  "public_umo": {
+    "description": "公开赛事消息推送目标",
+    "type": "list",
+    "default": []
+  },
+  "admin_umo": {
+    "description": "管理赛事消息推送目标",
+    "type": "list",
+    "default": []
+  },
+  "ops_umo": {
+    "description": "运维赛事消息推送目标",
+    "type": "list",
+    "default": []
+  },
+  "ret2shell_account": {
+    "description": "Ret2Shell 办赛账号",
+    "type": "string",
+    "hint": "可选。配置后启用题目详情和新通知补偿。"
+  },
+  "ret2shell_password": {
+    "description": "Ret2Shell 办赛账号密码",
+    "type": "string",
+    "secret": true,
+    "hint": "与办赛账号同时填写。"
+  },
+  "use_markdown": {
+    "description": "使用 Markdown 格式回复命令和播报消息",
+    "type": "bool",
+    "default": false
+  },
+  "enabled_events": {
+    "description": "需要播报的赛事事件",
+    "type": "list",
+    "render_type": "checkbox",
+    "default": [
+      "challenge_up",
+      "challenge_down",
+      "new_hint",
+      "blood_1",
+      "blood_2",
+      "blood_3",
+      "correct",
+      "cheated",
+      "too_quick",
+      "chat_message",
+      "new_notification",
+      "freeze",
+      "unfreeze",
+      "cluster_overloaded",
+      "cluster_recovered",
+      "server_panic"
+    ],
+    "options": [
+      "challenge_up",
+      "challenge_down",
+      "new_hint",
+      "blood_1",
+      "blood_2",
+      "blood_3",
+      "correct",
+      "cheated",
+      "too_quick",
+      "chat_message",
+      "new_notification",
+      "freeze",
+      "unfreeze",
+      "cluster_overloaded",
+      "cluster_recovered",
+      "server_panic"
+    ]
+  }
+}

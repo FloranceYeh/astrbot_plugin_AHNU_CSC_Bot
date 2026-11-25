@@ -1,0 +1,14 @@
+name: astrbot_plugin_AHNU_CSC_Bot
+display_name: AHNU CSC Ret2Shell 赛事播报
+desc: |
+  对接 Ret2Shell 赛事 WebSocket 和 HTTP API，播报赛事事件并提供赛事、排行、题目和队伍查询。
+version: 1.0.0
+author: AHNU CSC
+astrbot_version: ">=4.24.1"
+support_platforms:
+  - aiocqhttp
+  - qq_official
+tags:
+  - ctf
+  - ret2shell
+  - 赛事播报
