@@ -24,6 +24,7 @@ FORM_TEMPLATE = "\n".join(
         *[f"| {label} | |" for label in FORM_LABELS.values()],
     ]
 )
+PLAIN_FORM_TEMPLATE = "\n".join(f"{label}：" for label in FORM_LABELS.values())
 FORM_FIELD = re.compile(
     r"^[^\S\r\n]*(?:[|｜][^\S\r\n]*)?"
     r"(工单标题|问题描述|队伍[^\S\r\n]*(?ai:ID)|平台[^\S\r\n]*(?ai:ID)|学号)"
@@ -33,6 +34,10 @@ FORM_FIELD = re.compile(
 TABLE_CELL_END = re.compile(r"(?<!\\)((?:\\\\)*)[|｜]$")
 TABLE_LINE_BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
 MARKDOWN_SPECIAL = re.compile(r"([\\*_\x60~\[\]<>!&])")
+
+
+def form_template(markdown: bool) -> str:
+    return FORM_TEMPLATE if markdown else PLAIN_FORM_TEMPLATE
 
 
 class SupportService:
@@ -53,7 +58,7 @@ class SupportService:
         return pending
 
     async def reply_to_qq_group_message(
-        self, event: AstrMessageEvent, user_openid: str, text: str
+        self, event: AstrMessageEvent, user_openid: str, text: str, *, markdown: bool
     ) -> bool:
         message_id = event.message_obj.message_id
         if not message_id:
@@ -67,8 +72,9 @@ class SupportService:
         response = await send_c2c(
             openid=user_openid,
             msg_id=message_id,
-            msg_type=2,
-            markdown={"content": text},
+            msg_type=2 if markdown else 0,
+            markdown={"content": text} if markdown else None,
+            content=None if markdown else text,
         )
         return bool(
             response.get("id")
@@ -93,6 +99,7 @@ class SupportService:
         *,
         platform_name: str = "",
         sender_name: str = "",
+        markdown: bool = False,
     ) -> str:
         pending = self._pending.get(sender)
         if pending is None:
@@ -105,7 +112,7 @@ class SupportService:
             return (
                 "请一次发回工单标题和问题描述。可以填写表格、保留字段名，"
                 "或直接发送两行（第一行标题，第二行描述）。"
-                f"队伍 ID、平台 ID 和学号可选填。\n\n{FORM_TEMPLATE}"
+                f"队伍 ID、平台 ID 和学号可选填。\n\n{form_template(markdown)}"
             )
         ticket_id = uuid4().hex
         ticket = {
@@ -130,36 +137,40 @@ class SupportService:
 
         self.discard_reply(sender, pending)
         if self._target_umos:
-            await self._forward(ticket)
+            await self._forward(ticket, markdown)
         return f"工单已收到\n工单编号：{ticket_id}"
 
-    async def _forward(self, ticket: dict[str, str]) -> None:
+    async def _forward(self, ticket: dict[str, str], markdown: bool) -> None:
         id_label = {
             "aiocqhttp": "QQ 号",
             "qq_official": "QQ OpenID",
             "qq_official_webhook": "QQ OpenID",
         }.get(ticket.get("platform_name", ""), "用户 ID")
         nickname = " ".join(ticket.get("sender_name", "").split())
-        nickname = MARKDOWN_SPECIAL.sub(r"\\\1", nickname)
-        description = ticket["description"].replace("\n", "\n  ")
-        optional_lines = []
-        for key, label in OPTIONAL_FIELDS.items():
-            if value := ticket.get(key):
-                value = MARKDOWN_SPECIAL.sub(r"\\\1", " ".join(value.split()))
-                optional_lines.append(f"- {label}：{value}\n")
-        message = (
-            f"收到新工单\n"
-            f"- 工单编号：{ticket['id']}\n"
-            f"- 提交者昵称：{nickname or '未提供'}\n"
-            f"- {id_label}：{ticket['sender_id']}（{ticket['platform_id']}）\n"
-            f"- 工单标题：{ticket['title']}\n"
-            f"{''.join(optional_lines)}"
-            f"- 问题描述：{description}"
-        )
+        fields = [
+            ("工单编号", ticket["id"]),
+            ("提交者昵称", nickname or "未提供"),
+            (id_label, f"{ticket['sender_id']}（{ticket['platform_id']}）"),
+            ("工单标题", ticket["title"]),
+            *(
+                (label, " ".join(ticket[key].split()))
+                for key, label in OPTIONAL_FIELDS.items()
+                if ticket.get(key)
+            ),
+            ("问题描述", ticket["description"]),
+        ]
+        lines = ["## 收到新工单\n" if markdown else "收到新工单"]
+        for label, value in fields:
+            if markdown:
+                value = MARKDOWN_SPECIAL.sub(r"\\\1", value).replace("\n", "\n  ")
+                lines.append(f"- **{label}**：{value}")
+            else:
+                lines.append(f"{label}：{value}")
+        message = "\n".join(lines)
         results = await asyncio.gather(
             *(
                 self._context.send_message(
-                    target_umo, MessageChain().message(message).use_markdown(True)
+                    target_umo, MessageChain().message(message).use_markdown(markdown)
                 )
                 for target_umo in self._target_umos
             ),

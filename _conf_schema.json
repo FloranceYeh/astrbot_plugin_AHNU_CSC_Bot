@@ -40,7 +40,8 @@
   "use_markdown": {
     "description": "使用 Markdown 格式回复命令和播报消息",
     "type": "bool",
-    "default": false
+    "default": false,
+    "hint": "关闭时使用纯文本。开启时使用 Markdown，aiocqhttp 会按文本显示 Markdown 源文。"
   },
   "enabled_events": {
     "description": "需要播报的赛事事件",

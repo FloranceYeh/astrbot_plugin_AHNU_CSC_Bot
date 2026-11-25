@@ -10,7 +10,8 @@ from astrbot.api.event.filter import (
 from astrbot.api.platform import MessageType
 from astrbot.core.star import star_map
 
-from ..services.support import FORM_DURATION_MINUTES, FORM_FIELD, FORM_TEMPLATE
+from ..services.support import FORM_DURATION_MINUTES, FORM_FIELD, form_template
+from .replies import reply
 
 
 class SupportFormReplyFilter(CustomFilter):
@@ -33,7 +34,11 @@ def register_support(module_name: str) -> None:
     # AstrBot binds handlers to the Star instance by their registered module.
     start_support.__module__ = module_name
     receive_support_form.__module__ = module_name
-    command("support", desc="私聊提交工单")(start_support)
+    command(
+        "support",
+        alias={"/support"},
+        desc="私聊提交工单",
+    )(start_support)
     custom_filter(SupportFormReplyFilter, priority=10)(receive_support_form)
 
 
@@ -42,10 +47,11 @@ async def start_support(plugin: Any, event: AstrMessageEvent):
     private = event.is_private_chat()
     platform_name = event.get_platform_name()
     if not private and platform_name not in ("aiocqhttp", "qq_official"):
-        yield (
-            event.plain_result("请在与机器人的私聊中发送 /support 获取工单表单。")
-            .use_markdown(markdown)
-            .stop_event()
+        yield reply(
+            event,
+            "请在与机器人的私聊中发送 /support 获取工单表单。",
+            markdown,
+            stop=True,
         )
         return
 
@@ -56,46 +62,47 @@ async def start_support(plugin: Any, event: AstrMessageEvent):
         author = getattr(raw_message, "author", None)
         reply_sender_id = getattr(author, "user_openid", None)
     if not sender_id or plugin.support.directory is None:
-        yield (
-            event.plain_result("工单服务暂时不可用，请稍后重试。")
-            .use_markdown(markdown)
-            .stop_event()
-        )
+        yield reply(event, "工单服务暂时不可用，请稍后重试。", markdown, stop=True)
         return
     if not isinstance(reply_sender_id, str) or not reply_sender_id:
-        yield (
-            event.plain_result("请打开与机器人的私聊，发送 /support 获取工单表单。")
-            .use_markdown(markdown)
-            .stop_event()
+        yield reply(
+            event,
+            "请打开与机器人的私聊，发送 /support 获取工单表单。",
+            markdown,
+            stop=True,
         )
         return
 
-    title = "**赛事工单**"
+    title = "**赛事工单**" if markdown else "赛事工单"
+    instructions = (
+        "填写表格后一次发回。表格内换行可用 `<br>`。"
+        if markdown
+        else "在冒号后填写内容，然后一次发回。"
+    )
     delivery_note = (
         "提交后会转交人工处理并返回工单id。\n\n" if plugin.settings.support_umo else ""
     )
     form = (
-        f"{title}\n\n请在 {FORM_DURATION_MINUTES} 分钟内私聊发回表格，"
-        "或直接回复两行（第一行标题，第二行描述）。队伍 ID、平台 ID 和学号可选填。"
-        "表格内换行可用 `<br>`。\n\n"
-        f"{delivery_note}{FORM_TEMPLATE}"
+        f"{title}\n\n请在 {FORM_DURATION_MINUTES} 分钟内通过私聊提交。{instructions}\n"
+        "也可以回复两行，第一行为标题，第二行为描述。队伍 ID、平台 ID 和学号可选填。\n\n"
+        f"{delivery_note}{form_template(markdown)}"
     )
     reply_sender = (event.get_platform_id(), reply_sender_id)
     pending = plugin.support.expect_reply(reply_sender)
     if private:
-        yield event.plain_result(form).use_markdown(True).stop_event()
+        yield reply(event, form, markdown, stop=True)
         return
 
     sent = False
     try:
         if platform_name == "qq_official":
             sent = await plugin.support.reply_to_qq_group_message(
-                event, reply_sender_id, form
+                event, reply_sender_id, form, markdown=markdown
             )
         else:
             private_umo = f"{event.get_platform_id()}:{MessageType.FRIEND_MESSAGE.value}:{sender_id}"
             sent = await plugin.context.send_message(
-                private_umo, MessageChain().message(form).use_markdown(True)
+                private_umo, MessageChain().message(form).use_markdown(markdown)
             )
     except Exception as exc:
         logger.warning("Support form DM failed (%s).", type(exc).__name__)
@@ -108,7 +115,7 @@ async def start_support(plugin: Any, event: AstrMessageEvent):
         if sent
         else "私聊发送失败，请在与机器人的私聊中发送 /support 获取工单表单。"
     )
-    yield event.plain_result(message).use_markdown(markdown).stop_event()
+    yield reply(event, message, markdown, stop=True)
 
 
 async def receive_support_form(plugin: Any, event: AstrMessageEvent):
@@ -123,14 +130,12 @@ async def receive_support_form(plugin: Any, event: AstrMessageEvent):
         if isinstance(username, str):
             sender_name = username.strip()
 
-    reply = await plugin.support.submit(
+    markdown = plugin.settings.use_markdown
+    message = await plugin.support.submit(
         sender,
         event.get_message_str(),
         platform_name=platform_name,
         sender_name=sender_name,
+        markdown=markdown,
     )
-    yield (
-        event.plain_result(reply)
-        .use_markdown(plugin.settings.use_markdown or FORM_TEMPLATE in reply)
-        .stop_event()
-    )
+    yield reply(event, message, markdown, stop=True)
