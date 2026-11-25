@@ -20,6 +20,12 @@
     "type": "list",
     "default": []
   },
+  "support_umo": {
+    "description": "工单接收目标",
+    "type": "list",
+    "default": [],
+    "hint": "填写处理工单的 AstrBot 会话 UMO，可配置多个。用 /sid 查看。留空时仅保存工单。"
+  },
   "ret2shell_account": {
     "description": "Ret2Shell 办赛账号",
     "type": "string",

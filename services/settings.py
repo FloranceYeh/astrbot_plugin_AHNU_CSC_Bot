@@ -12,6 +12,7 @@ class Settings:
     targets: dict[Audience, tuple[str, ...]]
     enabled_events: frozenset[str]
     use_markdown: bool
+    support_umo: tuple[str, ...] = ()
 
     @classmethod
     def from_config(cls, config: Mapping) -> "Settings":
@@ -34,6 +35,11 @@ class Settings:
         ws_url = config.get("ret2shell_ws_link")
         account = config.get("ret2shell_account")
         password = config.get("ret2shell_password")
+        support_umo = config.get("support_umo")
+        if isinstance(support_umo, str):
+            support_umo = support_umo.split(",")
+        if not isinstance(support_umo, (list, tuple)):
+            support_umo = []
         return cls(
             ws_url=ws_url.strip() if isinstance(ws_url, str) else "",
             account=account.strip() if isinstance(account, str) else "",
@@ -45,4 +51,11 @@ class Settings:
             if isinstance(enabled, (list, tuple))
             else EVENT_KEYS,
             use_markdown=config.get("use_markdown") is True,
+            support_umo=tuple(
+                dict.fromkeys(
+                    item.strip()
+                    for item in support_umo
+                    if isinstance(item, str) and item.strip()
+                )
+            ),
         )

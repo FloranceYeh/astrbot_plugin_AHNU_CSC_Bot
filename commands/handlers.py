@@ -9,6 +9,7 @@ from astrbot.api.event.filter import PermissionType, command, permission_type
 from ..api import UNAVAILABLE
 from ..services.events import BLOODS, local_time, tag_name
 from ..services.settings import Settings
+from .support import register_support
 
 COMMANDS: dict[str, tuple[str, ...]] = {
     "query_game": ("game",),
@@ -27,6 +28,7 @@ def register_commands(module_name: str) -> None:
             permission_type(PermissionType.ADMIN)(handler)
         for name in names:
             command(name)(handler)
+    register_support(module_name)
 
 
 def _result(

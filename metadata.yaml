@@ -1,7 +1,7 @@
 name: astrbot_plugin_AHNU_CSC_Bot
-display_name: AHNU CSC Ret2Shell 赛事播报
+display_name: AHNU:CSC.Bot
 desc: |
-  对接 Ret2Shell 赛事 WebSocket 和 HTTP API，播报赛事事件并提供赛事、排行、题目和队伍查询。
+  [AHNU:CSC.Bot] 安徽师范大学计算机与信息学院（人工智能学院）CTF 校园网络安全竞赛专用 Bot
 version: 1.0.0
 author: AHNU CSC
 astrbot_version: ">=4.24.1"
